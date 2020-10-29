@@ -1,0 +1,151 @@
+#!/bin/bash 
+#Script to download SRR data/fastq files and perform multiqc, fastqc, and trimgalore
+#SBATCH --job-name=Data_download # Job name 
+#SBATCH --mail-type=ALL # Mail events (NONE, BEGIN, END, FAIL, ALL) 
+#SBATCH --mail-user=bc3125@nyulangone.org # Where to send mail 
+#SBATCH --ntasks=6 # Run on a single CPU 
+#SBATCH --mem=40gb # Job memory request 
+#SBATCH --time=12:00:00 # Time limit hrs:min:sec 
+#SBATCH --output=/gpfs/home/bc3125/jobreports/slurm_%A_%a.log # Standard output and error log 
+#SBATCH -p cpu_short # Specifies location to submit job
+#SBATCH --array=609-612,615,616
+
+
+# LOAD MODULES
+module load sratoolkit/2.9.1
+module load fastqc/0.11.7
+module load python/cpu/2.7.15-ES # contains multiqc command
+module load trimgalore/0.5.0
+
+
+# ENVIRONMENT SETUP
+mkdir -p /gpfs/scratch/bc3125/bioinformatics # -p flag will create a folder if necessary
+cd /gpfs/scratch/bc3125/bioinformatics
+mkdir -p ./hw2
+cd ./hw2
+
+
+DIRECTORY=/gpfs/scratch/bc3125/bioinformatics/hw2
+DATA_ID="7049" # beginning of SRR ID, without the array section
+
+
+# JOD DESCRIPTION
+hostname
+date
+pwd
+echo "SRR$DATA_ID$SLURM_ARRAY_TASK_ID" # to track which is current file 
+
+
+# DATA DOWNLOAD
+fastq-dump --split-files SRR${DATA_ID}${SLURM_ARRAY_TASK_ID} --gzip -O $DIRECTORY --origfmt
+
+
+# QC ANALYSIS
+fastqc -o $DIRECTORY $DIRECTORY/SRR${DATA_ID}${SLURM_ARRAY_TASK_ID}_1.fastq.gz \
+                     $DIRECTORY/SRR${DATA_ID}${SLURM_ARRAY_TASK_ID}_2.fastq.gz
+
+multiqc .
+
+# remove temporary directory that is utilized by fastq-dump
+#rm -vr ~/ncbi 
+
+# TRIMGALORE
+mkdir -p ./trimGalore
+cd ./trimGalore
+
+trim_galore --paired -q 30 --length 30 $DIRECTORY/SRR${DATA_ID}${SLURM_ARRAY_TASK_ID}_1.fastq.gz $DIRECTORY/SRR${DATA_ID}${SLURM_ARRAY_TASK_ID}_2.fastq.gz --fastqc
+
+multiqc .
+
+#!/bin/bash
+# Script that takes in two variables, paired end reads, (fastq.gz files) and aligns via bowtie2
+# output sam file  
+#SBATCH --job-name=bowtie
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=8G
+#SBATCH --time=12:00:00
+#SBATCH -p-cpu_short
+SRR1=$1
+SRR2=$2
+OUTSAM=$3
+module load bowtie2/2.4.1
+bowtie2 -x /gpfs/share/apps/iGenomes/Homo_sapiens/UCSC/hg38/Sequence/Bowtie2Index/genome -1 ${SRR1} -2 ${SRR2} -S ${OUTSAM}
+
+
+
+#!/bin/bash
+#SBATCH --job-name=sam_bam # Job name 
+#SBATCH --mail-type=ALL # Mail events (NONE, BEGIN, END, FAIL, ALL) 
+#SBATCH --mail-user=bc3125@nyulangone.org # Where to send mail 
+#SBATCH --ntasks=1 # Run on a single CPU 
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=8G # Job memory request 
+#SBATCH --time=12:00:00 # Time limit hrs:min:sec 
+#SBATCH --output=/gpfs/home/bc3125/jobreports/slurm_%A_%a.log # Standard output and error log 
+#SBATCH -p cpu_short # Specifies location to submit job
+
+
+
+module load samtools
+FILES=$(ls *.sam) #creates a varaible called files that contains all the .sam files
+
+for FILE in $FILES
+	do
+		echo "Converting $FILE to .bam"
+		t=$(echo $FILE | grep -o '^[^.]\+') #string before period
+		samtools view -S -b $FILE > $t.bam
+	done
+
+#!/bin/bash
+#run this in the same dir with all your bam files
+#sorts bams file to be used for igv
+#returns index bam files as .bai
+
+#SBATCH --job-name=bam_sort # Job name 
+#SBATCH --mail-type=ALL # Mail events (NONE, BEGIN, END, FAIL, ALL) 
+#SBATCH --mail-user=bc3125@nyulangone.org # Where to send mail 
+#SBATCH --ntasks=1 # Run on a single CPU 
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=8G # Job memory request 
+#SBATCH --time=12:00:00 # Time limit hrs:min:sec 
+#SBATCH --output=/gpfs/home/bc3125/jobreports/slurm_%A_%a.log # Standard output and error log 
+#SBATCH -p cpu_short # Specifies location to submit job
+
+
+
+module load samtools
+FILES=$(ls *.bam) #creates a varaible called files that contains all the .bam files
+
+for FILE in $FILES
+	do
+		echo "sorting $FILE"
+		t=$(echo $FILE | grep -o '^[^.]\+') #string before period
+		samtools sort $FILE -o $t_sorted.bam
+
+	done
+#!/bin/bash
+#run this in the same dir with all your sorted bams files
+#indexes bams file to be used for igv
+#returns index bam files as .bai
+
+#SBATCH --job-name=bam_index # Job name 
+#SBATCH --mail-type=ALL # Mail events (NONE, BEGIN, END, FAIL, ALL) 
+#SBATCH --mail-user=bc3125@nyulangone.org # Where to send mail 
+#SBATCH --ntasks=1 # Run on a single CPU 
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=8G # Job memory request 
+#SBATCH --time=12:00:00 # Time limit hrs:min:sec 
+#SBATCH --output=/gpfs/home/bc3125/jobreports/slurm_%A_%a.log # Standard output and error log 
+#SBATCH -p cpu_short # Specifies location to submit job
+
+
+
+module load samtools
+FILES=$(ls *.bam) #creates a varaible called files that contains all the .bam files
+
+for FILE in $FILES
+	do
+		echo "indexing $FILE"
+		samtools index $FILE 
+	done
